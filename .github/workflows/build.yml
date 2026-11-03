@@ -1,0 +1,94 @@
+name: Build APK
+
+# 专用构建仓库：只做一件事 —— 把 Operit 源码编译成 APK。
+# 设计要点：
+#   1. 源码不入库，构建时 clone 指定仓库/分支，仓库体积保持 0
+#   2. 构建前释放磁盘（标准 runner 只有 14GB，Operit 全量构建会撑爆）
+#   3. artifact 保留 7 天，避免像旧仓库那样堆到 10GB
+#   4. Gradle 不用守护进程、不保留 build-cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: '源码仓库 (owner/repo)'
+        required: true
+        default: 'CWIFISB1/Operit'
+      ref:
+        description: '分支或 commit'
+        required: true
+        default: 'main'
+      build_type:
+        description: 'assembleDebug / assembleRelease'
+        required: true
+        default: 'assembleDebug'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 释放磁盘空间
+        run: |
+          set -x
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL \
+                      /usr/local/lib/android/sdk/system-images 2>/dev/null || true
+          sudo apt-get clean
+          docker image prune -af 2>/dev/null || true
+          df -h /
+
+      - name: 签出源码
+        run: |
+          set -e
+          git clone --depth 1 --branch "${{ inputs.ref }}" \
+            "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ inputs.repo }}.git" src
+          cd src
+          git log --oneline -1
+
+      - name: 环境信息
+        run: |
+          java -version 2>&1 | head -3
+          node --version || true
+          df -h /
+
+      - name: 配置 Gradle
+        working-directory: src
+        run: |
+          set -e
+          echo "org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m" >> gradle.properties
+          echo "org.gradle.daemon=false" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "org.gradle.caching=false" >> gradle.properties
+          echo "android.enableJetifier=false" >> gradle.properties
+
+      - name: 构建
+        working-directory: src
+        run: |
+          set -o pipefail
+          ./gradlew ${{ inputs.build_type }} \
+            --no-daemon --no-build-cache --stacktrace 2>&1 | tail -120
+          echo "---- 产物 ----"
+          find . -name '*.apk' -not -path '*/intermediates/*' -exec ls -lh {} \;
+
+      - name: 上传 APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operit-apk-${{ inputs.build_type }}
+          path: |
+            src/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 失败时上传报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            src/app/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 3
