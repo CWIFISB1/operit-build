@@ -46,10 +46,16 @@ jobs:
       - name: 签出源码
         run: |
           set -e
-          git clone --depth 1 --branch "${{ inputs.ref }}" \
+          # terminal 是 git submodule，必须递归拉取，否则 :terminal 没有任何 variant
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            --branch "${{ inputs.ref }}" \
             "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ inputs.repo }}.git" src
           cd src
           git log --oneline -1
+          echo "---- submodules ----"
+          git submodule status || true
+          ls terminal/ | head -5
 
       - name: 环境信息
         run: |
