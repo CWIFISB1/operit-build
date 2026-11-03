@@ -97,6 +97,15 @@ jobs:
           key: gradle-${{ hashFiles('src/**/*.gradle*', 'src/gradle/**') }}
           restore-keys: gradle-
 
+      - name: 下载预构建依赖
+        run: |
+          set -e
+          mkdir -p src/app/libs
+          URL="https://github.com/CWIFISB1/operit-build/releases/download/prebuilt-deps/ffmpeg-kit-local.aar"
+          curl -sL -o src/app/libs/ffmpeg-kit-local.aar "$URL"
+          ls -lh src/app/libs/ffmpeg-kit-local.aar
+          md5sum src/app/libs/ffmpeg-kit-local.aar
+
       - name: 安装指定 NDK
         run: |
           set -e
