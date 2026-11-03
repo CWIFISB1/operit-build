@@ -48,9 +48,25 @@ jobs:
           set -e
           # terminal 是 git submodule，必须递归拉取，否则 :terminal 没有任何 variant
           git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
+          # 部分子模块用 SSH 地址（git@github.com:），runner 没有私钥，一并重写成 HTTPS
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "git@github.com:"
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             --branch "${{ inputs.ref }}" \
-            "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ inputs.repo }}.git" src
+            "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ inputs.repo }}.git" src \
+            || {
+              echo "::warning::递归拉取子模块失败，改为逐个容错拉取"
+              rm -rf src
+              git clone --depth 1 --branch "${{ inputs.ref }}" \
+                "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ inputs.repo }}.git" src
+              cd src
+              # terminal 是构建必需，单独拉
+              git submodule update --init --depth 1 terminal 2>&1 | tail -5
+              # 其余子模块（hotbuild 工具链）拉不到就跳过
+              git submodule status | awk '{print $2}' | grep -v '^terminal$' | while read sm; do
+                git submodule update --init --depth 1 "$sm" 2>&1 | tail -2 || echo "::warning::跳过子模块 $sm"
+              done
+              cd ..
+            }
           cd src
           git log --oneline -1
           echo "---- submodules ----"
