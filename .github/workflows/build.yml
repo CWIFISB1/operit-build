@@ -54,6 +54,15 @@ jobs:
           node --version || true
           df -h /
 
+      - name: 固定 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 确认 JDK
+        run: java -version 2>&1 | head -3
+
       - name: 配置 Gradle
         working-directory: src
         run: |
@@ -69,7 +78,7 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew ${{ inputs.build_type }} \
-            --no-daemon --no-build-cache --stacktrace 2>&1 | tail -120
+            --no-daemon --no-build-cache --stacktrace
           echo "---- 产物 ----"
           find . -name '*.apk' -not -path '*/intermediates/*' -exec ls -lh {} \;
 
